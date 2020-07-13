@@ -1,0 +1,61 @@
+#
+# This workflow checks if Scientific Colour Maps has a new release.
+# If a new release if found, it will open a issue automatically.
+#
+# http://www.fabiocrameri.ch/colourmaps.php
+#
+name: SCM Release Check
+on:
+  push:
+  schedule:
+    # weekly cron job
+    - cron: '0 0 * * 0'
+
+jobs:
+  scm-check:
+    name: SCM Release Check
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check the latest release
+        id: scm
+        run: |
+          scm_output=scm_version_string.txt
+          scm_version_in_gmt=6.0.4
+
+          # Crawl the version string for parsing
+          echo "Crawling the official site: http://www.fabiocrameri.ch/colourmaps.php"
+          curl -s http://www.fabiocrameri.ch/colourmaps.php | grep Version > ${scm_output}
+
+          # The number of lines in ${scm_output} must be 1
+          nlines=$(wc ${scm_output} | awk '{print $1}')
+          echo "Number of matched version strings: ${nlines}"
+          if [ "$nlines" != 1 ]; then
+            echo "${nlines} mactched version strings found. Will create a bug report!"
+            echo "::set-output name=error_code::1"
+          fi
+
+          # parse version string and date
+          scm_version=$(awk -F'Version <strong>' '{print $2}' scm_version_string.txt | awk -F'</strong>' '{print $1}')
+          scm_version_date=$(awk -F'(' '{print $2}' scm_version_string.txt | awk -F')' '{print $1}' | awk -F, '{print $1}')
+          echo "::set-output name=scm_version::${scm_version}"
+          echo "::set-output name=scm_version_date::${scm_version_date}"
+
+          echo "Find version ${scm_version} released on ${scm_version_date}"
+          if [ "${scm_version}" != ${scm_version_in_gmt} ]; then
+            echo "The latest SCM version ${scm_version} is different the one in GMT ${scm_version_in_gmt}!"
+            echo "Will create a update request!"
+            echo "::set-output name=error_code::2"
+          fi
+
+      - name: Create a bug report
+        run: |
+          echo "Something wrong when parsing the SCM version"
+        if: ${{ steps.scm.outputs.error_code == 1 }}
+
+      - name: Create a feature request
+        run: |
+          echo "New ScientificColourMaps released!"
+          echo ${{ steps.scm.outputs.scm_version }}
+          echo ${{ steps.scm.outputs.scm_version_date }}
+        if: ${{ steps.scm.outputs.error_code == 2 }}
